@@ -19,8 +19,6 @@ bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 
 # Get the bounding box dimensions
 bbox = obj.bound_box
-
-# Calculate the chunk size
 min_x = min([bbox[i][0] for i in range(8)])
 max_x = max([bbox[i][0] for i in range(8)])
 min_y = min([bbox[i][1] for i in range(8)])
@@ -31,38 +29,45 @@ max_z = max([bbox[i][2] for i in range(8)])
 chunk_width = (max_x - min_x) / grid_size[0]
 chunk_height = (max_y - min_y) / grid_size[1]
 
-# Function to create a chunk
-def create_chunk(obj, min_x, max_x, min_y, max_y):
-    bpy.ops.object.select_all(action='DESELECT')
-    obj.select_set(True)
-    
-    # Duplicate the object
-    bpy.ops.object.duplicate(linked=False)
-    chunk_obj = bpy.context.selected_objects[0]
-    
-    # Create a new boolean modifier to cut the chunk
-    bool_mod = chunk_obj.modifiers.new(name='Chunk', type='BOOLEAN')
-    bool_mod.operation = 'INTERSECT'
-    
-    # Create a cube to use as the boolean object
-    bpy.ops.mesh.primitive_cube_add(size=2, enter_editmode=False, align='WORLD', 
-                                    location=((min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2))
+# Function to create a bounding box
+def create_bounding_box(min_x, max_x, min_y, max_y, min_z, max_z):
+    bpy.ops.mesh.primitive_cube_add(location=((min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2))
     cube = bpy.context.active_object
-    cube.scale[0] = (max_x - min_x) / 2
-    cube.scale[1] = (max_y - min_y) / 2
-    cube.scale[2] = (max_z - min_z) / 2
+    cube.scale = [(max_x - min_x) / 2, (max_y - min_y) / 2, (max_z - min_z) / 2]
+    return cube
+
+# Function to cut the object with the bounding box and export the chunk
+def create_and_export_chunk(obj, min_x, max_x, min_y, max_y, chunk_count):
+    # Create the bounding box
+    bbox_cube = create_bounding_box(min_x, max_x, min_y, max_y, min_z, max_z)
     
-    # Set the boolean object
-    bool_mod.object = cube
+    # Add a boolean modifier to the object
+    bool_mod = obj.modifiers.new(name=f"Chunk_{chunk_count}", type='BOOLEAN')
+    bool_mod.operation = 'INTERSECT'
+    bool_mod.object = bbox_cube
+    bpy.context.view_layer.objects.active = obj
     
     # Apply the boolean modifier
-    bpy.context.view_layer.objects.active = chunk_obj
     bpy.ops.object.modifier_apply(modifier=bool_mod.name)
     
-    # Delete the boolean object
-    bpy.data.objects.remove(cube, do_unlink=True)
+    # Separate the chunk into a new object
+    bpy.ops.object.mode_set(mode='EDIT')
+    bpy.ops.mesh.separate(type='LOOSE')
+    bpy.ops.object.mode_set(mode='OBJECT')
     
-    return chunk_obj
+    # Select the new chunk and export it
+    chunk = bpy.context.selected_objects[-1]  # The newly separated chunk
+    chunk_name = f"chunk_{chunk_count}"
+    chunk_filename = f"{chunk_name}.glb"
+    chunk_filepath = os.path.join(output_dir, chunk_filename)
+    
+    bpy.ops.object.select_all(action='DESELECT')
+    chunk.select_set(True)
+    bpy.ops.export_scene.gltf(filepath=chunk_filepath, export_format='GLB')
+    
+    # Delete the bounding box and the chunk object from the scene
+    bpy.data.objects.remove(bbox_cube, do_unlink=True)
+    bpy.data.objects.remove(chunk, do_unlink=True)
 
 # Loop over the grid and create chunks
 chunk_count = 1
@@ -73,17 +78,7 @@ for i in range(grid_size[0]):
         min_y_chunk = min_y + j * chunk_height
         max_y_chunk = min_y + (j + 1) * chunk_height
         
-        chunk_obj = create_chunk(obj, min_x_chunk, max_x_chunk, min_y_chunk, max_y_chunk)
-        
-        # Export the chunk
-        chunk_filename = f'chunk_{chunk_count}.glb'
-        chunk_filepath = os.path.join(output_dir, chunk_filename)
-        bpy.ops.object.select_all(action='DESELECT')
-        chunk_obj.select_set(True)
-        bpy.ops.export_scene.gltf(filepath=chunk_filepath, export_format='GLB')
-        
-        # Delete the chunk object
-        bpy.data.objects.remove(chunk_obj, do_unlink=True)
+        create_and_export_chunk(obj, min_x_chunk, max_x_chunk, min_y_chunk, max_y_chunk, chunk_count)
         
         chunk_count += 1
 
