@@ -1,85 +1,45 @@
 import bpy
-import os
+import math
 
-# Define the directory to save the chunks
-output_dir = os.path.join(os.path.expanduser('~'), '3d_model_chunks')
+def chunk_object(obj, chunk_size):
+    # Get the dimensions of the object
+    dims = obj.dimensions
 
-# Ensure the output directory exists
-if not os.path.exists(output_dir):
-    os.makedirs(output_dir)
+    # Calculate the number of chunks in each dimension
+    chunks_x = math.ceil(dims.x / chunk_size)
+    chunks_y = math.ceil(dims.y / chunk_size)
+    chunks_z = math.ceil(dims.z / chunk_size)
 
-# Define the grid size for chunking (e.g., 2x2 grid)
-grid_size = (2, 2)
+    # Create a new collection to hold the chunks
+    chunk_collection = bpy.data.collections.new(obj.name + "_chunks")
+    bpy.context.scene.collection.children.link(chunk_collection)
 
-# Get the current object (ensure your model is selected)
+    # Loop over the dimensions
+    for x in range(chunks_x):
+        for y in range(chunks_y):
+            for z in range(chunks_z):
+                # Duplicate the object
+                chunk = obj.copy()
+                chunk.data = obj.data.copy()
+                chunk_collection.objects.link(chunk)
+
+                # Set the location of the chunk
+                chunk.location.x += x * chunk_size
+                chunk.location.y += y * chunk_size
+                chunk.location.z += z * chunk_size
+
+                # Add a boolean modifier to cut the chunk
+                mod = chunk.modifiers.new("Chunk", 'BOOLEAN')
+                mod.operation = 'INTERSECT'
+                mod.object = bpy.data.objects.new("Chunk_cutter", bpy.data.meshes.new("Chunk_cutter"))
+                mod.object.dimensions = (chunk_size, chunk_size, chunk_size)
+                mod.object.location = chunk.location
+
+                # Apply the modifier
+                bpy.ops.object.modifier_apply({"object": chunk}, modifier=mod.name)
+
+# Get the active object
 obj = bpy.context.active_object
 
-# Apply any transformations to the object (important for accurate chunking)
-bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
-
-# Get the bounding box dimensions
-bbox = obj.bound_box
-min_x = min([bbox[i][0] for i in range(8)])
-max_x = max([bbox[i][0] for i in range(8)])
-min_y = min([bbox[i][1] for i in range(8)])
-max_y = max([bbox[i][1] for i in range(8)])
-min_z = min([bbox[i][2] for i in range(8)])
-max_z = max([bbox[i][2] for i in range(8)])
-
-chunk_width = (max_x - min_x) / grid_size[0]
-chunk_height = (max_y - min_y) / grid_size[1]
-
-# Function to create a bounding box
-def create_bounding_box(min_x, max_x, min_y, max_y, min_z, max_z):
-    bpy.ops.mesh.primitive_cube_add(location=((min_x + max_x) / 2, (min_y + max_y) / 2, (min_z + max_z) / 2))
-    cube = bpy.context.active_object
-    cube.scale = [(max_x - min_x) / 2, (max_y - min_y) / 2, (max_z - min_z) / 2]
-    return cube
-
-# Function to cut the object with the bounding box and export the chunk
-def create_and_export_chunk(obj, min_x, max_x, min_y, max_y, chunk_count):
-    # Create the bounding box
-    bbox_cube = create_bounding_box(min_x, max_x, min_y, max_y, min_z, max_z)
-    
-    # Add a boolean modifier to the object
-    bool_mod = obj.modifiers.new(name=f"Chunk_{chunk_count}", type='BOOLEAN')
-    bool_mod.operation = 'INTERSECT'
-    bool_mod.object = bbox_cube
-    bpy.context.view_layer.objects.active = obj
-    
-    # Apply the boolean modifier
-    bpy.ops.object.modifier_apply(modifier=bool_mod.name)
-    
-    # Separate the chunk into a new object
-    bpy.ops.object.mode_set(mode='EDIT')
-    bpy.ops.mesh.separate(type='LOOSE')
-    bpy.ops.object.mode_set(mode='OBJECT')
-    
-    # Select the new chunk and export it
-    chunk = bpy.context.selected_objects[-1]  # The newly separated chunk
-    chunk_name = f"chunk_{chunk_count}"
-    chunk_filename = f"{chunk_name}.glb"
-    chunk_filepath = os.path.join(output_dir, chunk_filename)
-    
-    bpy.ops.object.select_all(action='DESELECT')
-    chunk.select_set(True)
-    bpy.ops.export_scene.gltf(filepath=chunk_filepath, export_format='GLB')
-    
-    # Delete the bounding box and the chunk object from the scene
-    bpy.data.objects.remove(bbox_cube, do_unlink=True)
-    bpy.data.objects.remove(chunk, do_unlink=True)
-
-# Loop over the grid and create chunks
-chunk_count = 1
-for i in range(grid_size[0]):
-    for j in range(grid_size[1]):
-        min_x_chunk = min_x + i * chunk_width
-        max_x_chunk = min_x + (i + 1) * chunk_width
-        min_y_chunk = min_y + j * chunk_height
-        max_y_chunk = min_y + (j + 1) * chunk_height
-        
-        create_and_export_chunk(obj, min_x_chunk, max_x_chunk, min_y_chunk, max_y_chunk, chunk_count)
-        
-        chunk_count += 1
-
-print('Model chunking complete. Chunks saved to:', output_dir)
+# Chunk the object
+chunk_object(obj, 1.0)
