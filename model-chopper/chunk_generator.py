@@ -1,7 +1,8 @@
 import bpy
+import os
 import math
 
-def chunk_object(obj, chunk_size):
+def chunk_and_export_object(obj, chunk_size, export_path):
     # Get the dimensions of the object
     dims = obj.dimensions
 
@@ -38,8 +39,23 @@ def chunk_object(obj, chunk_size):
                 # Apply the modifier
                 bpy.ops.object.modifier_apply({"object": chunk}, modifier=mod.name)
 
+    # Ensure the export path exists
+    os.makedirs(export_path, exist_ok=True)
+
+    # Loop over all objects in the collection
+    for obj in chunk_collection.objects:
+        # Select the object
+        bpy.ops.object.select_all(action='DESELECT')
+        obj.select_set(True)
+
+        # Set the export path for this object
+        file_path = os.path.join(export_path, obj.name + ".glb")
+
+        # Export the object
+        bpy.ops.export_scene.gltf(filepath=file_path)
+
 # Get the active object
 obj = bpy.context.active_object
 
-# Chunk the object
-chunk_object(obj, 1.0)
+# Chunk the object and export the chunks
+chunk_and_export_object(obj, 1.0, "./chunks/")
