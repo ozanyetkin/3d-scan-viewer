@@ -36,8 +36,11 @@ def chunk_and_export_object(obj, chunk_size, export_path):
                 mod.object.dimensions = (chunk_size, chunk_size, chunk_size)
                 mod.object.location = chunk.location
 
+                # Set the chunk as the active object
+                bpy.context.view_layer.objects.active = chunk
+
                 # Apply the modifier
-                bpy.ops.object.modifier_apply({"object": chunk}, modifier=mod.name)
+                bpy.ops.object.modifier_apply(modifier=mod.name)
 
     # Ensure the export path exists
     os.makedirs(export_path, exist_ok=True)
@@ -53,6 +56,7 @@ def chunk_and_export_object(obj, chunk_size, export_path):
 
         # Export the object
         bpy.ops.export_scene.gltf(filepath=file_path)
+        print("Exported:", file_path)
 
 # Get the active object
 obj = bpy.context.active_object
